@@ -9,12 +9,10 @@ import (
   "log"
   "net/http"
   "strings"
-  "time"
 )
 
 type SailorController struct {
-  DBSrc                     func() sqlexp.Querier
-  ArtificialProcessingDelay time.Duration
+  DBSrc func() sqlexp.Querier
 }
 
 func (sc *SailorController) AddSailor(c *gin.Context) {
