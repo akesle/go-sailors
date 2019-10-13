@@ -1,1 +1,249 @@
 package controllers
+
+import (
+  "database/sql"
+  "github.com/akesle/sailors/models"
+  "github.com/gin-gonic/gin"
+  _ "github.com/go-sql-driver/mysql"
+  "log"
+  "net/http"
+  "strings"
+)
+
+func AddSailor(c *gin.Context) {
+
+  var
+  (
+    sailor models.Sailor
+    err    error
+    db     *sql.DB
+    result sql.Result
+  )
+
+  if err = c.ShouldBind(&sailor); err == nil {
+    log.Printf("%v", sailor)
+
+    db, err = sql.Open("mysql", "api_user:example@tcp(127.0.0.1:3306)/sailors")
+    defer func() {
+      if err = db.Close(); err != nil {
+        log.Printf("Failed closing database: %v", err)
+      }
+    }()
+
+    if err != nil {
+      log.Printf("Failed to open database: %v", err)
+      c.String(http.StatusInternalServerError, "Issue creating sailor; user not at fault")
+      return
+    }
+
+    result, err = db.Exec("INSERT INTO Sailor (FirstName, LastName, Age) VALUES(?,?,?)",
+      sailor.FirstName, sailor.LastName, sailor.Age)
+
+    if err != nil {
+      log.Printf("Failed to create sailor: %v", err)
+      c.String(http.StatusInternalServerError, "Issue creating sailor; user not at fault")
+      return
+    }
+
+    if count, rowsError := result.RowsAffected(); count != 1 || rowsError != nil {
+      log.Printf("Failed to create sailor: %v", rowsError)
+      c.String(http.StatusInternalServerError, "Issue creating sailor; user not at fault")
+      return
+    }
+
+    c.String(http.StatusCreated, "Success")
+    return
+  }
+  log.Printf("Error parsing input: %v", err)
+  c.String(http.StatusBadRequest, "Failed to parse input")
+}
+
+func FindSailor(c *gin.Context) {
+
+  var
+  (
+    queriedSailor models.Sailor
+    foundSailor   models.Sailor
+    err           error
+    db            *sql.DB
+    rows          *sql.Rows
+  )
+
+  if err = c.ShouldBind(&queriedSailor); err == nil {
+    log.Printf("%v", queriedSailor)
+
+    db, err = sql.Open("mysql", "api_user:example@tcp(127.0.0.1:3306)/sailors")
+    defer func() {
+      if err = db.Close(); err != nil {
+        log.Printf("Failed closing database: %v", err)
+      }
+    }()
+
+    handleQueryErr := func(err error) {
+      log.Printf("Failed to query sailor: %v", err)
+      c.String(http.StatusInternalServerError, "Issue querying sailor; user not at fault")
+    }
+
+    baseQuery := "SELECT FirstName, LastName, Age FROM Sailor WHERE "
+    var criteria []string
+    var args []interface{}
+    if queriedSailor.FirstName != "" {
+      criteria = append(criteria, "FirstName = ?")
+      args = append(args, queriedSailor.FirstName)
+    }
+    if queriedSailor.LastName != "" {
+      criteria = append(criteria, "LastName = ?")
+      args = append(args, queriedSailor.LastName)
+    }
+    if queriedSailor.Age != 0 {
+      criteria = append(criteria, "Age = ?")
+      args = append(args, queriedSailor.Age)
+    }
+    query := baseQuery + strings.Join(criteria, " AND ")
+
+    rows, err = db.Query(query, args...)
+    if err != nil {
+      handleQueryErr(err)
+      return
+    }
+
+    if err = rows.Err(); err != nil {
+      handleQueryErr(err)
+      return
+    }
+    defer func() {
+      err = rows.Close()
+      if err != nil {
+        log.Printf("Failed closing rows for queried %v: %v", queriedSailor, err)
+      }
+    }()
+    var sailors []models.Sailor
+    for rows.Next() {
+      err = rows.Scan(&foundSailor.FirstName, &foundSailor.LastName, &foundSailor.Age)
+      if err != nil {
+        log.Printf("Failed to scan sailor database fields: %v", err)
+        c.String(http.StatusInternalServerError, "Issue querying sailor; user not at fault")
+        return
+      }
+      sailors = append(sailors, foundSailor)
+    }
+
+    c.JSON(http.StatusOK, sailors)
+
+    return
+  }
+  log.Printf("Error parsing input: %v", err)
+  c.String(http.StatusBadRequest, "Failed to parse input")
+}
+
+func RemoveSailor(c *gin.Context) {
+
+  var
+  (
+    sailor models.AffectedSailor
+    err    error
+    db     *sql.DB
+    result sql.Result
+  )
+
+  if err = c.ShouldBind(&sailor); err == nil {
+    log.Printf("%v", sailor)
+
+    db, err = sql.Open("mysql", "api_user:example@tcp(127.0.0.1:3306)/sailors")
+    defer func() {
+      if err = db.Close(); err != nil {
+        log.Printf("Failed closing database: %v", err)
+      }
+    }()
+
+    if err != nil {
+      log.Printf("Failed to open database: %v", err)
+      c.String(http.StatusInternalServerError, "Issue removing sailor; user not at fault")
+      return
+    }
+
+    result, err = db.Exec("DELETE FROM Sailor WHERE FirstName = ? AND LastName = ? AND Age = ?",
+      sailor.FirstName, sailor.LastName, sailor.Age)
+
+    if err != nil {
+      log.Printf("Failed to remove sailor: %v", err)
+      c.String(http.StatusInternalServerError, "Issue removing sailor; user not at fault")
+      return
+    }
+
+    if count, rowsError := result.RowsAffected(); count < 1 || rowsError != nil {
+      log.Printf("Failed to remove any matching sailor: %v", rowsError)
+    }
+
+    c.String(http.StatusAccepted, "Success")
+    return
+  }
+  log.Printf("Error parsing input: %v", err)
+  c.String(http.StatusBadRequest, "Failed to parse input")
+}
+
+func ModifySailor(c *gin.Context) {
+
+  var
+  (
+    requested models.SailorUpdates
+    err       error
+    db        *sql.DB
+    result    sql.Result
+  )
+
+  if err = c.ShouldBind(&requested); err == nil {
+    log.Printf("%v", requested)
+
+    db, err = sql.Open("mysql", "api_user:example@tcp(127.0.0.1:3306)/sailors")
+    defer func() {
+      if err = db.Close(); err != nil {
+        log.Printf("Failed closing database: %v", err)
+      }
+    }()
+
+    if err != nil {
+      log.Printf("Failed to open database: %v", err)
+      c.String(http.StatusInternalServerError, "Issue updating sailor; user not at fault")
+      return
+    }
+
+    baseQuery := "UPDATE Sailor SET "
+    querySuffix := " WHERE FirstName = ? AND LastName = ? AND Age = ?"
+    var updates []string
+    var args []interface{}
+    if requested.UpdatedFirstName != "" {
+      updates = append(updates, "FirstName = ?")
+      args = append(args, requested.UpdatedFirstName)
+    }
+    if requested.UpdatedLastName != "" {
+      updates = append(updates, "LastName = ?")
+      args = append(args, requested.UpdatedLastName)
+    }
+    if requested.UpdatedAge != 0 {
+      updates = append(updates, "Age = ?")
+      args = append(args, requested.UpdatedAge)
+    }
+    args = append(args,
+      requested.AffectedSailor.FirstName, requested.AffectedSailor.LastName, requested.AffectedSailor.Age)
+    query := baseQuery + strings.Join(updates, ", ") + querySuffix
+
+    result, err = db.Exec(query, args...)
+
+    if err != nil {
+      log.Printf("Failed to update sailor: %v", err)
+      c.String(http.StatusInternalServerError, "Issue updating sailor; user not at fault")
+      return
+    }
+
+    if count, rowsError := result.RowsAffected(); count < 1 || rowsError != nil {
+      log.Printf("Failed to update any matching sailor: %v", rowsError)
+      c.String(http.StatusBadRequest, "Failed to find any matching sailors")
+    }
+
+    c.String(http.StatusOK, "Success")
+    return
+  }
+  log.Printf("Error parsing input: %v", err)
+  c.String(http.StatusBadRequest, "Failed to parse input")
+}
