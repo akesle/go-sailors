@@ -39,7 +39,10 @@ func (q *CircuitBreakerQuerier) ExecContext(ctx context.Context, query string, a
     result, err = q.Querier.ExecContext(cancellableCtx, query, args...)
     return err
   }, q.Timeout); err != nil {
-    cancel()
+    // Open breaker will prevent setting of CancelFunc
+    if cancel != nil {
+      cancel()
+    }
   }
   return
 }
@@ -74,7 +77,10 @@ func (q *CircuitBreakerQuerier) QueryRowContext(ctx context.Context, query strin
     row = q.Querier.QueryRowContext(ctx, query, args...)
     return nil
   }, q.Timeout); err != nil {
-    cancel()
+    // Open breaker will prevent setting of CancelFunc
+    if cancel != nil {
+      cancel()
+    }
   }
   return
 }
@@ -105,7 +111,6 @@ func (s *SailorAPI) Run() error {
     DBSrc: func() sqlexp.Querier {
       return cbQuery
     },
-    ArtificialProcessingDelay: s.SailorArtificialDelay,
   }
 
   // Wire-up the routes
